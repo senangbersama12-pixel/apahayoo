@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Magic Surprise for Felicia</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Arial', sans-serif; }
+        
+        #text-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #ff69b4;
+            font-size: 3.5rem;
+            font-weight: bold;
+            text-align: center;
+            pointer-events: none;
+            opacity: 0;
+            transition: all 0.5s ease;
+            text-shadow: 0 0 20px rgba(255, 105, 180, 0.8);
+            z-index: 100;
+        }
+
+        /* Container untuk banyak foto */
+        #photo-gallery {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        .floating-photo {
+            position: absolute;
+            width: 180px;
+            height: 180px;
+            border-radius: 20px;
+            border: 4px solid #fff;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            object-fit: cover;
+            opacity: 0;
+            transform: scale(0) rotate(-10deg);
+            transition: all 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        #video-container { 
+            position: absolute; 
+            bottom: 20px; 
+            left: 20px; 
+            width: 120px; 
+            border-radius: 10px; 
+            overflow: hidden; 
+            opacity: 0.3; 
+        }
+        video { width: 100%; transform: scaleX(-1); }
+    </style>
+</head>
+<body>
+
+<div id="text-overlay">I Love You<br>Felicia Franssisca</div>
+<div id="photo-gallery"></div>
+<div id="video-container"><video id="input_video"></video></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tween.js/18.6.4/tween.umd.js"></script>
+
+<script>
+    // --- KONFIGURASI FOTO ---
+    // Tambahkan nama file foto Anda di sini sebanyak mungkin
+    const photoSources = [
+        'foto1.jpg', 
+        'foto2.jpg', 
+        'foto3.jpg',
+        'foto4.jpg',
+        'foto5.jpg'
+    ];
+
+    const gallery = document.getElementById('photo-gallery');
+    const textOverlay = document.getElementById('text-overlay');
+    const photoElements = [];
+
+    // Buat elemen gambar secara dinamis
+    photoSources.forEach((src, index) => {
+        const img = document.createElement('img');
+        img.src = src;
+        img.className = 'floating-photo';
+        // Posisi acak di layar
+        img.style.left = (Math.random() * 70 + 10) + '%';
+        img.style.top = (Math.random() * 70 + 10) + '%';
+        gallery.appendChild(img);
+        photoElements.push(img);
+    });
+
+    // --- THREE.JS SETUP ---
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+    camera.position.z = 50;
+
+    const particleCount = 6000;
+    const geometry = new THREE.BufferGeometry();
+    const posArray = new Float32Array(particleCount * 3);
+    for(let i=0; i<particleCount*3; i++) posArray[i] = (Math.random()-0.5)*100;
+    geometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+
+    const material = new THREE.PointsMaterial({
+        size: 0.3,
+        color: 0xffffff,
+        transparent: true,
+        blending: THREE.AdditiveBlending
+    });
+    const particles = new THREE.Points(geometry, material);
+    scene.add(particles);
+
+    // --- SHAPES ---
+    function getHeartPoint(t) {
+        t *= Math.PI;
+        return new THREE.Vector3(
+            1.2 * (16 * Math.pow(Math.sin(t), 3)),
+            1.2 * (13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t)),
+            0
+        );
+    }
+
+    function transformParticles(type) {
+        const positions = particles.geometry.attributes.position.array;
+        for (let i = 0; i < particleCount; i++) {
+            let target;
+            if (type === 'heart') target = getHeartPoint((i/particleCount)*2);
+            else target = new THREE.Vector3((Math.random()-0.5)*100, (Math.random()-0.5)*100, (Math.random()-0.5)*100);
+
+            new TWEEN.Tween(positions)
+                .to({ [i*3]: target.x, [i*3+1]: target.y, [i*3+2]: target.z }, 1500)
+                .easing(TWEEN.Easing.Quadratic.Out).start();
+        }
+    }
+
+    // --- MEDIAPIPE ---
+    const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+    hands.setOptions({ maxNumHands: 1, minDetectionConfidence: 0.7 });
+
+    let active = false;
+    hands.onResults((results) => {
+        if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+            const hand = results.multiHandLandmarks[0];
+            const dist = Math.hypot(hand[8].x - hand[4].x, hand[8].y - hand[4].y);
+
+            // Gerakan interaktif mengikuti jari telunjuk
+            particles.position.x = (0.5 - hand[8].x) * 100;
+            particles.position.y = (0.5 - hand[8].y) * 100;
+
+            if (dist > 0.25 && !active) {
+                active = true;
+                textOverlay.style.opacity = 1;
+                material.color.setHex(0xff69b4);
+                transformParticles('heart');
+                // Munculkan semua foto dengan jeda sedikit
+                photoElements.forEach((img, i) => {
+                    setTimeout(() => {
+                        img.style.opacity = '1';
+                        img.style.transform = `scale(1) rotate(${(Math.random()-0.5)*30}deg)`;
+                    }, i * 200);
+                });
+            } else if (dist < 0.1 && active) {
+                active = false;
+                textOverlay.style.opacity = 0;
+                material.color.setHex(0xffffff);
+                transformParticles('random');
+                photoElements.forEach(img => {
+                    img.style.opacity = '0';
+                    img.style.transform = 'scale(0) rotate(-10deg)';
+                });
+            }
+        }
+    });
+
+    const cameraInput = new Camera(document.getElementById('input_video'), {
+        onFrame: async () => { await hands.send({image: document.getElementById('input_video')}); },
+        width: 640, height: 480
+    });
+    cameraInput.start();
+
+    function animate(time) {
+        requestAnimationFrame(animate);
+        TWEEN.update(time);
+        particles.geometry.attributes.position.needsUpdate = true;
+        particles.rotation.y += 0.003;
+        renderer.render(scene, camera);
+    }
+    animate();
+
+    window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+</script>
+</body>
+</html>
